@@ -1,44 +1,44 @@
-# opencode-claude-code-provider
+# opencode-claude-max-proxy
 
-Use your Claude Max subscription ($200/month) within OpenCode's TUI.
+Use your Claude Max subscription ($200/month) with OpenCode.
 
-This provides a proxy server that translates Anthropic API requests to Claude Agent SDK calls, allowing OpenCode to use your Claude Max subscription.
+A proxy server that translates Anthropic API requests to Claude Agent SDK calls, letting OpenCode use your Claude Max subscription instead of per-token API billing.
 
 ## Prerequisites
 
-1. **Claude Code CLI** installed and authenticated:
+1. **Claude CLI** installed and authenticated:
    ```bash
    npm install -g @anthropic-ai/claude-code
    claude login
    ```
 
-2. **OpenCode** version 0.14.4 or higher
+2. **OpenCode** installed
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourname/opencode-claude-code-provider
-cd opencode-claude-code-provider
+git clone https://github.com/rynfar/opencode-claude-max-proxy
+cd opencode-claude-max-proxy
 bun install
 ```
 
 ## Usage
 
-### Step 1: Start the Proxy Server
+### Start the Proxy
 
 ```bash
 bun run proxy
 ```
 
-This starts the Claude Max proxy on `http://127.0.0.1:3456`.
+Starts on `http://127.0.0.1:3456`.
 
-### Step 2: Run OpenCode with Environment Variables
+### Run OpenCode
 
 ```bash
 ANTHROPIC_API_KEY=dummy ANTHROPIC_BASE_URL=http://127.0.0.1:3456 opencode
 ```
 
-Then select any `anthropic/claude-*` model from the model picker.
+Select any `anthropic/claude-*` model.
 
 ### One-liner
 
@@ -47,92 +47,66 @@ bun run proxy &
 ANTHROPIC_API_KEY=dummy ANTHROPIC_BASE_URL=http://127.0.0.1:3456 opencode
 ```
 
-### Convenience Script
+## Auto-start on macOS
 
-Create a shell alias or script:
+Create a launchd service:
 
 ```bash
-#!/bin/bash
-cd /path/to/opencode-claude-code-provider
-bun run proxy &
-PROXY_PID=$!
-trap "kill $PROXY_PID 2>/dev/null" EXIT
-ANTHROPIC_API_KEY=dummy ANTHROPIC_BASE_URL=http://127.0.0.1:3456 opencode "$@"
+cat > ~/Library/LaunchAgents/com.claude-max-proxy.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude-max-proxy</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/bun</string>
+        <string>run</string>
+        <string>proxy</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/opencode-claude-max-proxy</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+launchctl load ~/Library/LaunchAgents/com.claude-max-proxy.plist
+```
+
+Then add to `~/.zshrc`:
+
+```bash
+alias oc='ANTHROPIC_API_KEY=dummy ANTHROPIC_BASE_URL=http://127.0.0.1:3456 opencode'
 ```
 
 ## Model Mapping
 
-The proxy maps OpenCode model names to Claude Agent SDK models:
-
-| OpenCode Model | Claude SDK Model |
-|----------------|------------------|
+| OpenCode Model | Claude SDK |
+|----------------|------------|
 | `anthropic/claude-opus-*` | opus |
 | `anthropic/claude-sonnet-*` | sonnet |
 | `anthropic/claude-haiku-*` | haiku |
 
+## Configuration
+
+```bash
+CLAUDE_PROXY_PORT=8080 bun run proxy
+CLAUDE_PROXY_HOST=0.0.0.0 bun run proxy
+```
+
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  OpenCode                                               │
-│  (uses ANTHROPIC_BASE_URL=http://127.0.0.1:3456)        │
-└───────────────────────┬─────────────────────────────────┘
-                        │ POST /messages
-                        ▼
-┌─────────────────────────────────────────────────────────┐
-│  Claude Max Proxy (Hono server)                         │
-│  - Receives Anthropic API format requests               │
-│  - Translates to Claude Agent SDK query() calls         │
-│  - Streams back Anthropic SSE format                    │
-└───────────────────────┬─────────────────────────────────┘
-                        │ query()
-                        ▼
-┌─────────────────────────────────────────────────────────┐
-│  Claude Agent SDK                                       │
-│  (uses your Claude Max subscription)                    │
-└─────────────────────────────────────────────────────────┘
+OpenCode ──► Proxy (localhost:3456) ──► Claude Agent SDK ──► Claude Max
+         POST /messages              query()
 ```
 
-## Configuration
-
-### Proxy Port
-
-```bash
-PORT=8080 bun run proxy
-```
-
-### Proxy Host
-
-```bash
-HOST=0.0.0.0 bun run proxy
-```
-
-## Development
-
-```bash
-bun install
-bun test
-bun run typecheck
-```
-
-## Troubleshooting
-
-### "Authentication failed"
-Run `claude login` to authenticate with Claude Code CLI.
-
-### "Connection refused"
-Ensure the proxy is running on the expected port.
-
-### Debug mode
-```bash
-OPENCODE_CLAUDE_PROVIDER_DEBUG=1 bun run proxy
-```
-
-## Technical Notes
-
-- The proxy uses the Claude Agent SDK's `query()` function with `maxTurns: 1`
-- Streaming responses use Anthropic's SSE format (message_start, content_block_delta, etc.)
-- Authentication is handled automatically by the Claude Code CLI
+The proxy receives Anthropic API requests, calls the Claude Agent SDK, and streams back Anthropic SSE format responses.
 
 ## License
 
